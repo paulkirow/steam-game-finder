@@ -1,54 +1,96 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Steam Game Finder
 
-## Getting Started
+Find games your friend group can all play together. Enter Steam profiles, compare libraries, filter by co-op/multiplayer.
 
-### Local secrets
+## Prerequisites
 
-Create a `.dev.vars` file in the project root (never commit this):
+- [Node.js](https://nodejs.org) 18+
+- [Wrangler CLI](https://developers.cloudflare.com/workers/wrangler/): `npm install -g wrangler`
+- A [Cloudflare account](https://dash.cloudflare.com/sign-up)
+- A [Steam Web API key](https://steamcommunity.com/dev/apikey)
 
-```
-STEAM_API_KEY=your_key_here
-```
+## Running locally
 
-Get a Steam API key at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). This is required — the app won't be able to fetch Steam data without it.
-
-### Run the development server
-
-Use `wrangler dev` (not `npm run dev`) to get local D1/KV emulation:
+**1. Install dependencies**
 
 ```bash
-wrangler dev
+npm install
 ```
 
-Or for UI-only changes without database bindings:
+**2. Create `.dev.vars`** (never commit this file — it's in `.gitignore`)
+
+```
+STEAM_API_KEY=your_steam_api_key_here
+```
+
+**3. Set up the local D1 database**
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npx wrangler d1 execute steam-game-finder --file=./schema.sql --local
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**4. Start the dev server**
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npx wrangler dev
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Open [http://localhost:3000](http://localhost:3000). This gives you full D1/KV emulation. Hot reload works normally.
 
-## Learn More
+> `npm run dev` also works for UI-only changes but won't have database or KV bindings.
 
-To learn more about Next.js, take a look at the following resources:
+## Deploying to Cloudflare Workers
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**1. Log in to Cloudflare**
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+npx wrangler login
+```
 
-## Deploy on Vercel
+**2. Create the D1 database** (first time only)
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+npx wrangler d1 create steam-game-finder
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Copy the `database_id` from the output into `wrangler.jsonc` if it differs from the one already there.
+
+**3. Apply the database schema** (first time only)
+
+```bash
+npx wrangler d1 execute steam-game-finder --file=./schema.sql --remote
+```
+
+**4. Set your Steam API key as a secret**
+
+```bash
+npx wrangler secret put STEAM_API_KEY
+```
+
+Paste your key when prompted.
+
+**5. Deploy**
+
+```bash
+npm run deploy
+```
+
+Your worker will be live at `https://steam-game-finder.<your-subdomain>.workers.dev`.
+
+## Subsequent deploys
+
+```bash
+npm run deploy
+```
+
+That's it — builds and deploys in one command.
+
+## Tech stack
+
+| Layer | What |
+|---|---|
+| Framework | Next.js 16 (App Router) |
+| Hosting | Cloudflare Workers via `@opennextjs/cloudflare` |
+| Database | Cloudflare D1 (SQLite) |
+| Cache | Cloudflare KV |
+| Styling | Tailwind CSS v4 |
