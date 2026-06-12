@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { getCachedLibrary, enrichGames } from "@/lib/api-cache";
+import type { DBGame } from "@/lib/db";
 import type { LibrariesRequest, LibrariesResponse, SteamGame } from "@/lib/types";
-
-export const runtime = "edge";
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = (await request.json()) as LibrariesRequest;
@@ -13,15 +12,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "steamIds required" }, { status: 400 });
   }
 
-  const { env } = await getCloudflareContext({ async: true });
-  const kv = env.STEAM_CACHE;
-  const db = env.DB;
+  const cfCtx = await getCloudflareContext({ async: true }).catch((e) => {
+    console.error("getCloudflareContext failed:", e);
+    return null;
+  });
+  if (!cfCtx) {
+    return NextResponse.json({ error: "Cloudflare context unavailable" }, { status: 500 });
+  }
+
+  const kv = cfCtx.env.STEAM_CACHE;
+  const db = cfCtx.env.DB;
 
   const privateUsers: string[] = [];
   const freqMap = new Map<number, { count: number; name: string; ownerIds: string[] }>();
 
   for (const steamId of steamIds) {
-    // Check KV profile cache to skip GetOwnedGames for private profiles.
     const profileEntry = await kv.get(`steam:profile:${steamId}`, "text");
     if (profileEntry) {
       const profile = JSON.parse(profileEntry) as { isPrivate?: boolean };
@@ -49,12 +54,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const publicCount = steamIds.length - privateUsers.length;
 
-  // Sort appids by owner count descending so enrichment prioritizes most-shared games.
   const sortedAppids = Array.from(freqMap.keys()).sort(
     (a, b) => freqMap.get(b)!.count - freqMap.get(a)!.count
   );
 
-  const gameDataMap = await enrichGames(sortedAppids, db);
+  let gameDataMap: Map<number, DBGame>;
+  try {
+    gameDataMap = await enrichGames(sortedAppids, db);
+  } catch (e) {
+    console.error("enrichGames failed:", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 
   const games: SteamGame[] = sortedAppids.map((appid) => {
     const freq = freqMap.get(appid)!;

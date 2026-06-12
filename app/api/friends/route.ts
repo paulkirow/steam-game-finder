@@ -3,8 +3,6 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { getCachedFriendIds, fetchAndCacheProfiles } from "@/lib/api-cache";
 import type { FriendsResponse } from "@/lib/types";
 
-export const runtime = "edge";
-
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const steamId = request.nextUrl.searchParams.get("steamId");
   if (!steamId) {
@@ -14,9 +12,19 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { env } = await getCloudflareContext({ async: true });
-  const kv = env.STEAM_CACHE;
-  const db = env.DB;
+  const cfCtx = await getCloudflareContext({ async: true }).catch((e) => {
+    console.error("getCloudflareContext failed:", e);
+    return null;
+  });
+  if (!cfCtx) {
+    return NextResponse.json(
+      { friends: [], error: "Cloudflare context unavailable" },
+      { status: 500 }
+    );
+  }
+
+  const kv = cfCtx.env.STEAM_CACHE;
+  const db = cfCtx.env.DB;
 
   try {
     const friendIds = await getCachedFriendIds(steamId, kv);
@@ -28,7 +36,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json(response);
     }
 
-    // Limit to 200 to stay within subrequest budget (2 GetPlayerSummaries calls).
     const limited = friendIds.slice(0, 200);
     const friends = await fetchAndCacheProfiles(limited, kv, db);
 

@@ -17,7 +17,7 @@ import {
 } from "./db";
 import type { SteamUser } from "./types";
 
-const API_KEY = process.env.STEAM_API_KEY ?? "";
+const getApiKey = () => process.env.STEAM_API_KEY ?? "";
 
 const TTL_LIBRARY = 24 * 60 * 60;
 const TTL_FRIENDS = 60 * 60;
@@ -68,7 +68,7 @@ export async function resolveToSteamId64(
   }
   try {
     await checkDailyLimit(kv, 1);
-    const steamId = await resolveVanityUrl(identifier, API_KEY);
+    const steamId = await resolveVanityUrl(identifier, getApiKey());
     if (!steamId) {
       return { steamId: null, error: `Could not resolve: ${raw}` };
     }
@@ -87,7 +87,7 @@ export async function fetchAndCacheProfiles(
   await checkDailyLimit(kv, Math.ceil(steamIds.length / 100));
   const summaries: PlayerSummary[] = await getPlayerSummaries(
     steamIds,
-    API_KEY
+    getApiKey()
   );
   const now = Math.floor(Date.now() / 1000);
 
@@ -132,7 +132,7 @@ export async function getCachedLibrary(
   if (cached) {
     return JSON.parse(cached) as OwnedGame[];
   }
-  const games = await getOwnedGames(steamId, API_KEY);
+  const games = await getOwnedGames(steamId, getApiKey());
   await kv.put(`steam:library:${steamId}`, JSON.stringify(games), {
     expirationTtl: TTL_LIBRARY,
   });
@@ -148,7 +148,7 @@ export async function getCachedFriendIds(
     return JSON.parse(cached) as string[];
   }
   await checkDailyLimit(kv, 1);
-  const ids = await getFriendList(steamId, API_KEY);
+  const ids = await getFriendList(steamId, getApiKey());
   if (ids.length > 0) {
     await kv.put(`steam:friends:${steamId}`, JSON.stringify(ids), {
       expirationTtl: TTL_FRIENDS,

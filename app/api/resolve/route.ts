@@ -6,8 +6,6 @@ import {
 } from "@/lib/api-cache";
 import type { ResolveRequest, ResolveResponse } from "@/lib/types";
 
-export const runtime = "edge";
-
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = (await request.json()) as ResolveRequest;
   const { ids } = body;
@@ -22,9 +20,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     );
   }
 
-  const { env } = await getCloudflareContext({ async: true });
-  const kv = env.STEAM_CACHE;
-  const db = env.DB;
+  const cfCtx = await getCloudflareContext({ async: true }).catch((e) => {
+    console.error("getCloudflareContext failed:", String(e));
+    return null;
+  });
+  if (!cfCtx) {
+    return NextResponse.json({ error: "Cloudflare context unavailable" }, { status: 500 });
+  }
+
+  const kv = cfCtx.env.STEAM_CACHE;
+  const db = cfCtx.env.DB;
 
   const resolvedIds: string[] = [];
   const errors: Array<{ id: string; error: string }> = [];
@@ -38,8 +43,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
   }
 
-  const users = await fetchAndCacheProfiles(resolvedIds, kv, db);
-
-  const response: ResolveResponse = { users, errors };
-  return NextResponse.json(response);
+  try {
+    const users = await fetchAndCacheProfiles(resolvedIds, kv, db);
+    const response: ResolveResponse = { users, errors };
+    return NextResponse.json(response);
+  } catch (e) {
+    console.error("fetchAndCacheProfiles failed:", e);
+    return NextResponse.json({ error: String(e) }, { status: 500 });
+  }
 }

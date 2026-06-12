@@ -262,8 +262,8 @@ export default function ResultsLoader() {
     const counts = new Map<string, number>();
     for (const game of games) {
       if (!game.tags) continue;
-      for (const [tag, votes] of Object.entries(game.tags)) {
-        counts.set(tag, (counts.get(tag) ?? 0) + votes);
+      for (const tag of Object.keys(game.tags)) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1);
       }
     }
     return Array.from(counts.entries())
@@ -436,9 +436,10 @@ export default function ResultsLoader() {
                 {topTags().map((tag) => (
                   <button
                     key={tag}
-                    onClick={() =>
-                      setTagFilter((prev) => (prev === tag ? null : tag))
-                    }
+                    onClick={() => {
+                      setTagFilter((prev) => (prev === tag ? null : tag));
+                      setActiveTab("all");
+                    }}
                     className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
                       tagFilter === tag
                         ? "bg-slate-600 border-slate-500 text-white"
