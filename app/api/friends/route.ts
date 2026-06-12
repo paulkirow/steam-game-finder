@@ -1,0 +1,44 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { getCachedFriendIds, fetchAndCacheProfiles } from "@/lib/api-cache";
+import type { FriendsResponse } from "@/lib/types";
+
+export const runtime = "edge";
+
+export async function GET(request: NextRequest): Promise<NextResponse> {
+  const steamId = request.nextUrl.searchParams.get("steamId");
+  if (!steamId) {
+    return NextResponse.json(
+      { friends: [], error: "steamId required" },
+      { status: 400 }
+    );
+  }
+
+  const { env } = await getCloudflareContext({ async: true });
+  const kv = env.STEAM_CACHE;
+  const db = env.DB;
+
+  try {
+    const friendIds = await getCachedFriendIds(steamId, kv);
+    if (friendIds.length === 0) {
+      const response: FriendsResponse = {
+        friends: [],
+        error: "No friends found or friends list is private",
+      };
+      return NextResponse.json(response);
+    }
+
+    // Limit to 200 to stay within subrequest budget (2 GetPlayerSummaries calls).
+    const limited = friendIds.slice(0, 200);
+    const friends = await fetchAndCacheProfiles(limited, kv, db);
+
+    const response: FriendsResponse = { friends };
+    return NextResponse.json(response);
+  } catch (e) {
+    const response: FriendsResponse = {
+      friends: [],
+      error: String(e),
+    };
+    return NextResponse.json(response);
+  }
+}
