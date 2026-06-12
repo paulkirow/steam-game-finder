@@ -37,7 +37,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     }
 
     try {
-      const games = await getCachedLibrary(steamId, kv);
+      const games = await getCachedLibrary(steamId, kv, db);
       for (const game of games) {
         const existing = freqMap.get(game.appid);
         if (existing) {

@@ -13,6 +13,7 @@ import {
   upsertGameSteamSpy,
   upsertGameStore,
   batchUpsertUsers,
+  batchUpsertGameNames,
   getUsersByIds,
   getCacheEntry,
   setCacheEntry,
@@ -162,16 +163,33 @@ export async function fetchAndCacheProfiles(
 
 export async function getCachedLibrary(
   steamId: string,
-  kv: KVNamespace
+  kv: KVNamespace,
+  db: D1Database
 ): Promise<OwnedGame[]> {
-  const cached = await kv.get(`steam:library:${steamId}`, "text");
-  if (cached) {
-    return JSON.parse(cached) as OwnedGame[];
+  const kvKey = `steam:library:${steamId}`;
+  const dbKey = `library:${steamId}`;
+
+  const kvCached = await kv.get(kvKey, "text");
+  if (kvCached) {
+    return JSON.parse(kvCached) as OwnedGame[];
   }
+
+  const d1Cached = await getCacheEntry(db, dbKey);
+  if (d1Cached) {
+    await kv.put(kvKey, d1Cached, { expirationTtl: TTL_LIBRARY });
+    return JSON.parse(d1Cached) as OwnedGame[];
+  }
+
+  await checkDailyLimit(kv, 1);
   const games = await getOwnedGames(steamId, getApiKey());
-  await kv.put(`steam:library:${steamId}`, JSON.stringify(games), {
-    expirationTtl: TTL_LIBRARY,
-  });
+  const json = JSON.stringify(games);
+
+  await Promise.all([
+    kv.put(kvKey, json, { expirationTtl: TTL_LIBRARY }),
+    setCacheEntry(db, dbKey, json, TTL_LIBRARY),
+    batchUpsertGameNames(db, games),
+  ]);
+
   return games;
 }
 

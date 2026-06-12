@@ -132,6 +132,22 @@ export async function getUsersByIds(
   return results;
 }
 
+export async function batchUpsertGameNames(
+  db: D1Database,
+  games: Array<{ appid: number; name: string }>
+): Promise<void> {
+  if (games.length === 0) return;
+  for (let i = 0; i < games.length; i += D1_VARIABLE_LIMIT) {
+    const chunk = games.slice(i, i + D1_VARIABLE_LIMIT);
+    const stmts = chunk.map((g) =>
+      db
+        .prepare("INSERT OR IGNORE INTO steam_games (appid, name) VALUES (?, ?)")
+        .bind(g.appid, g.name)
+    );
+    await db.batch(stmts);
+  }
+}
+
 export async function getCacheEntry(
   db: D1Database,
   key: string

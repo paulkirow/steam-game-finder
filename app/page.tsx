@@ -42,6 +42,11 @@ export default function HomePage() {
         });
         const resolveData = (await resolveRes.json()) as ResolveResponse;
 
+        if (!resolveData.users || !resolveData.errors) {
+          setError((resolveData as { error?: string }).error ?? "API error");
+          setPhase("input");
+          return;
+        }
         if (resolveData.errors.length > 0 || resolveData.users.length === 0) {
           setError(
             resolveData.errors[0]?.error ?? "Could not resolve Steam ID"
