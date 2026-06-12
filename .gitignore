@@ -48,3 +48,6 @@ next-env.d.ts
 
 # JetBrains IDE
 .idea/
+
+
+.open-next/
