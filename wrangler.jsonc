@@ -1,0 +1,24 @@
+{
+  "name": "steam-game-finder",
+  "compatibility_date": "2025-01-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "pages_build_output_dir": ".open-next/assets",
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "steam-game-finder",
+      // Replace with real ID after running: wrangler d1 create steam-game-finder
+      "database_id": "local-placeholder"
+    }
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "STEAM_CACHE",
+      "id": "local-placeholder",
+      // Replace with real ID after running: wrangler kv namespace create STEAM_CACHE
+      "preview_id": "local-placeholder"
+    }
+  ]
+}

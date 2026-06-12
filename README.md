@@ -2,7 +2,25 @@ This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-
 
 ## Getting Started
 
-First, run the development server:
+### Local secrets
+
+Create a `.dev.vars` file in the project root (never commit this):
+
+```
+STEAM_API_KEY=your_key_here
+```
+
+Get a Steam API key at [steamcommunity.com/dev/apikey](https://steamcommunity.com/dev/apikey). This is required — the app won't be able to fetch Steam data without it.
+
+### Run the development server
+
+Use `wrangler dev` (not `npm run dev`) to get local D1/KV emulation:
+
+```bash
+wrangler dev
+```
+
+Or for UI-only changes without database bindings:
 
 ```bash
 npm run dev
