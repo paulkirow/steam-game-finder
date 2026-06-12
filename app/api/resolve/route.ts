@@ -35,7 +35,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const errors: Array<{ id: string; error: string }> = [];
 
   for (const raw of ids) {
-    const { steamId, error } = await resolveToSteamId64(raw, kv);
+    const { steamId, error } = await resolveToSteamId64(raw, kv, db);
     if (steamId) {
       resolvedIds.push(steamId);
     } else {

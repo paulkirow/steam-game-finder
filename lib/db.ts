@@ -131,3 +131,34 @@ export async function getUsersByIds(
   }
   return results;
 }
+
+export async function getCacheEntry(
+  db: D1Database,
+  key: string
+): Promise<string | null> {
+  const now = Math.floor(Date.now() / 1000);
+  const row = await db
+    .prepare("SELECT response FROM api_cache WHERE key = ? AND expires_at > ?")
+    .bind(key, now)
+    .first<{ response: string }>();
+  return row?.response ?? null;
+}
+
+export async function setCacheEntry(
+  db: D1Database,
+  key: string,
+  response: string,
+  ttlSeconds: number
+): Promise<void> {
+  const expiresAt = Math.floor(Date.now() / 1000) + ttlSeconds;
+  await db
+    .prepare(
+      `INSERT INTO api_cache (key, response, expires_at)
+       VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET
+         response = excluded.response,
+         expires_at = excluded.expires_at`
+    )
+    .bind(key, response, expiresAt)
+    .run();
+}

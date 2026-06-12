@@ -13,6 +13,9 @@ import {
   upsertGameSteamSpy,
   upsertGameStore,
   batchUpsertUsers,
+  getUsersByIds,
+  getCacheEntry,
+  setCacheEntry,
   type DBGame,
 } from "./db";
 import type { SteamUser } from "./types";
@@ -22,8 +25,10 @@ const getApiKey = () => process.env.STEAM_API_KEY ?? "";
 const TTL_LIBRARY = 24 * 60 * 60;
 const TTL_FRIENDS = 60 * 60;
 const TTL_CALL_COUNTER = 25 * 60 * 60;
+const TTL_VANITY = 7 * 24 * 60 * 60;
 const MAX_DAILY_CALLS = 100_000;
 const GAME_STALE_SECONDS = 7 * 24 * 60 * 60;
+const USER_STALE_SECONDS = 24 * 60 * 60;
 // Max new-game enrichments per /api/libraries call to stay within subrequest budget.
 const MAX_ENRICHMENT_PER_REQUEST = 8;
 
@@ -60,11 +65,17 @@ export function extractIdentifier(raw: string): string {
 
 export async function resolveToSteamId64(
   raw: string,
-  kv: KVNamespace
+  kv: KVNamespace,
+  db: D1Database
 ): Promise<{ steamId: string | null; error: string | null }> {
   const identifier = extractIdentifier(raw);
   if (isSteamId64(identifier)) {
     return { steamId: identifier, error: null };
+  }
+  const cacheKey = `vanity:${identifier}`;
+  const cached = await getCacheEntry(db, cacheKey);
+  if (cached) {
+    return { steamId: cached, error: null };
   }
   try {
     await checkDailyLimit(kv, 1);
@@ -72,6 +83,7 @@ export async function resolveToSteamId64(
     if (!steamId) {
       return { steamId: null, error: `Could not resolve: ${raw}` };
     }
+    await setCacheEntry(db, cacheKey, steamId, TTL_VANITY);
     return { steamId, error: null };
   } catch (e) {
     return { steamId: null, error: String(e) };
@@ -84,44 +96,68 @@ export async function fetchAndCacheProfiles(
   db: D1Database
 ): Promise<SteamUser[]> {
   if (steamIds.length === 0) return [];
-  await checkDailyLimit(kv, Math.ceil(steamIds.length / 100));
-  const summaries: PlayerSummary[] = await getPlayerSummaries(
-    steamIds,
-    getApiKey()
-  );
+
   const now = Math.floor(Date.now() / 1000);
 
-  const users: SteamUser[] = summaries.map((s) => ({
-    steamId: s.steamid,
-    personaName: s.personaname,
-    avatarUrl: s.avatarfull,
-    isPrivate: s.communityvisibilitystate !== 3,
-  }));
+  // Serve fresh users from D1, only hit Steam API for stale/missing ones.
+  const existing = await getUsersByIds(db, steamIds);
+  const existingMap = new Map(existing.map((u) => [u.steam_id, u]));
+
+  const fromCache: SteamUser[] = [];
+  const needsFetch: string[] = [];
+
+  for (const steamId of steamIds) {
+    const row = existingMap.get(steamId);
+    if (row && now - row.updated_at <= USER_STALE_SECONDS) {
+      fromCache.push({
+        steamId: row.steam_id,
+        personaName: row.persona_name ?? "",
+        avatarUrl: row.avatar_url ?? "",
+        isPrivate: row.is_private === 1,
+      });
+    } else {
+      needsFetch.push(steamId);
+    }
+  }
+
+  const fetched: SteamUser[] = [];
+  if (needsFetch.length > 0) {
+    await checkDailyLimit(kv, Math.ceil(needsFetch.length / 100));
+    const summaries = await getPlayerSummaries(needsFetch, getApiKey());
+    for (const s of summaries) {
+      fetched.push({
+        steamId: s.steamid,
+        personaName: s.personaname,
+        avatarUrl: s.avatarfull,
+        isPrivate: s.communityvisibilitystate !== 3,
+      });
+    }
+    await batchUpsertUsers(
+      db,
+      fetched.map((u) => ({
+        steam_id: u.steamId,
+        persona_name: u.personaName,
+        avatar_url: u.avatarUrl,
+        is_private: u.isPrivate ? 1 : 0,
+        updated_at: now,
+      }))
+    );
+  }
+
+  const allUsers = [...fromCache, ...fetched];
 
   // Write private flag to KV so /api/libraries can skip GetOwnedGames without D1 lookup.
   await Promise.all(
-    users.map((u) =>
+    allUsers.map((u) =>
       kv.put(
         `steam:profile:${u.steamId}`,
         JSON.stringify({ isPrivate: u.isPrivate }),
-        { expirationTtl: 24 * 60 * 60 }
+        { expirationTtl: TTL_LIBRARY }
       )
     )
   );
 
-  // Persist to D1 in a single batch.
-  await batchUpsertUsers(
-    db,
-    users.map((u) => ({
-      steam_id: u.steamId,
-      persona_name: u.personaName,
-      avatar_url: u.avatarUrl,
-      is_private: u.isPrivate ? 1 : 0,
-      updated_at: now,
-    }))
-  );
-
-  return users;
+  return allUsers;
 }
 
 export async function getCachedLibrary(
