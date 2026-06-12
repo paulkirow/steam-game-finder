@@ -20,8 +20,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "Cloudflare context unavailable" }, { status: 500 });
   }
 
-  const kv = cfCtx.env.STEAM_CACHE;
-  const db = cfCtx.env.DB;
+  const { env: { STEAM_CACHE: kv, DB: db }, ctx } = cfCtx;
 
   const privateUsers: string[] = [];
   const freqMap = new Map<number, { count: number; name: string; ownerIds: string[] }>();
@@ -58,13 +57,20 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     (a, b) => freqMap.get(b)!.count - freqMap.get(a)!.count
   );
 
+  // Limit D1 lookups + background enrichment to the top 200 games by ownership frequency.
+  const topAppids = sortedAppids.slice(0, 200);
+
   let gameDataMap: Map<number, DBGame>;
   try {
-    gameDataMap = await enrichGames(sortedAppids, db);
+    gameDataMap = await enrichGames(topAppids, db);
   } catch (e) {
     console.error("enrichGames failed:", e);
     return NextResponse.json({ error: String(e) }, { status: 500 });
   }
+
+  // After responding, enrich the next batch. The second call skips games just enriched
+  // (they're fresh in D1) and processes the next 20 needing enrichment.
+  ctx.waitUntil(enrichGames(topAppids, db, 28));
 
   const games: SteamGame[] = sortedAppids.map((appid) => {
     const freq = freqMap.get(appid)!;

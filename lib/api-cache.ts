@@ -218,7 +218,8 @@ function isStale(updatedAt: number | null): boolean {
 
 export async function enrichGames(
   appids: number[],
-  db: D1Database
+  db: D1Database,
+  limit = MAX_ENRICHMENT_PER_REQUEST
 ): Promise<Map<number, DBGame>> {
   if (appids.length === 0) return new Map();
 
@@ -241,7 +242,7 @@ export async function enrichGames(
   }
 
   // Process most-important first (appids are already sorted by ownerCount desc by caller).
-  const toEnrich = needsEnrichment.slice(0, MAX_ENRICHMENT_PER_REQUEST);
+  const toEnrich = needsEnrichment.slice(0, limit);
 
   for (const { appid, needsSpy, needsStore } of toEnrich) {
     const now = Math.floor(Date.now() / 1000);
